@@ -1,29 +1,60 @@
+import os
 import pandas as pd
 import numpy as np
-from utils.preprocessing import preprocess_data
+import joblib
+from sklearn.model_selection import train_test_split
+from xgboost import XGBRegressor
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
-import xgboost as xgb
-import joblib
+from tensorflow.keras.callbacks import EarlyStopping
 
-def train_lstm_model(X, y):
-    X = np.reshape(X, (X.shape[0], 1, X.shape[1]))
-    model = Sequential()
-    model.add(LSTM(50, activation='relu', input_shape=(X.shape[1], X.shape[2])))
-    model.add(Dense(1))
+def load_data(file_path='/content/data/processed_data.csv'):
+    df = pd.read_csv(file_path)
+    features = ['pressure', 'flow_rate', 'water_cut']
+    target = 'flow_rate'  # predicting flow_rate for example
+    return df[features], df[target]
+
+def train_xgboost(X_train, y_train, X_val, y_val):
+    model = XGBRegressor(n_estimators=100, learning_rate=0.1, max_depth=3)
+    model.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds=10, verbose=False)
+    return model
+
+def train_lstm(X_train, y_train, X_val, y_val):
+    # Reshape for LSTM: [samples, timesteps, features]
+    X_train_lstm = np.reshape(X_train.values, (X_train.shape[0], 1, X_train.shape[1]))
+    X_val_lstm = np.reshape(X_val.values, (X_val.shape[0], 1, X_val.shape[1]))
+
+    model = Sequential([
+        LSTM(50, activation='relu', input_shape=(1, X_train.shape[1])),
+        Dense(1)
+    ])
     model.compile(optimizer='adam', loss='mse')
-    model.fit(X, y, epochs=50, verbose=1)
-    model.save('models/lstm_model.h5')
+    es = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+    model.fit(X_train_lstm, y_train, validation_data=(X_val_lstm, y_val), epochs=50, batch_size=8, verbose=1, callbacks=[es])
+    return model
 
-def train_xgboost_model(X, y):
-    model = xgb.XGBRegressor(n_estimators=100)
-    model.fit(X, y)
-    model.save_model('models/xgboost_model.json')
+def save_models(xgb_model, lstm_model, model_dir='/content/models'):
+    os.makedirs(model_dir, exist_ok=True)
+    joblib.dump(xgb_model, os.path.join(model_dir, 'xgb_model.pkl'))
+    lstm_model.save(os.path.join(model_dir, 'lstm_model.h5'))
+    print("✅ Models saved to:", model_dir)
+
+def main():
+    # Load data
+    X, y = load_data()
+    
+    # Split data
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # Train models
+    print("🧠 Training XGBoost...")
+    xgb_model = train_xgboost(X_train, y_train, X_val, y_val)
+    
+    print("🧠 Training LSTM...")
+    lstm_model = train_lstm(X_train, y_train, X_val, y_val)
+
+    # Save models
+    save_models(xgb_model, lstm_model)
 
 if __name__ == "__main__":
-    df, _ = preprocess_data()
-    X = df[['pressure', 'flow_rate', 'water_cut']].values
-    y = df['production_rate'].values
-
-    train_lstm_model(X, y)
-    train_xgboost_model(X, y)
+    main()
