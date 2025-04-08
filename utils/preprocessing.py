@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 from sklearn.preprocessing import MinMaxScaler
+import matplotlib.pyplot as plt
 
 def preprocess_data(file_path='/content/data/raw_data.csv'):
     # Create output directory if it doesn't exist
