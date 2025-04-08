@@ -38,7 +38,7 @@ st.markdown(
     """
     <style>
     .stApp {
-        background-image: url('https://tse2.mm.bing.net/th?id=OIP.e5mlISBeDUlweUSvoiD_cwHaFd&pid=Api');
+        background-image: url('assests/reservoir_graphic.jpg');
         background-size: cover;
         background-attachment: fixed;
     }
