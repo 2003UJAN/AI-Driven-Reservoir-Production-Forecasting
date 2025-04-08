@@ -1,54 +1,64 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import joblib
+import os
 from tensorflow.keras.models import load_model
-import xgboost as xgb
-import matplotlib.pyplot as plt
-from utils.preprocessing import preprocess_data
+from PIL import Image
 
 # Load models
-lstm_model = load_model('models/lstm_model.h5')
-xgb_model = xgb.XGBRegressor()
-xgb_model.load_model('models/xgboost_model.json')
+@st.cache_resource
+def load_models():
+    xgb_model = joblib.load('models/xgb_model.pkl')
+    lstm_model = load_model('models/lstm_model.h5')
+    return xgb_model, lstm_model
 
-# App UI
-st.set_page_config(page_title="🛢️ Reservoir Production Forecasting", layout="wide")
+# Load models
+xgb_model, lstm_model = load_models()
+
+# App title and banner
+st.set_page_config(page_title="Reservoir Forecasting App", layout="wide")
 st.title("🛢️ AI-Driven Reservoir Production Forecasting")
-st.markdown("Predict oil reservoir production using **LSTM** and **XGBoost** based on well parameters.")
+st.markdown("Predict future production using historical reservoir parameters!")
 
-st.image("https://i.ibb.co/k2QQV5C/oil-well-graphic.png", use_column_width=True)
+# Sidebar inputs
+st.sidebar.header("Input Reservoir Parameters")
+pressure = st.sidebar.slider("Reservoir Pressure (psi)", 1000, 5000, 3000)
+flow_rate = st.sidebar.slider("Initial Flow Rate (STB/day)", 100, 5000, 1500)
+water_cut = st.sidebar.slider("Water Cut (%)", 0, 100, 30)
 
-# Inputs
-st.sidebar.header("Enter Well Parameters:")
-pressure = st.sidebar.slider("Pressure (psi)", 2000, 5000, 3000)
-flow_rate = st.sidebar.slider("Flow Rate (barrels/day)", 50, 500, 200)
-water_cut = st.sidebar.slider("Water Cut (%)", 0.0, 1.0, 0.3)
+input_data = pd.DataFrame([[pressure, flow_rate, water_cut]], 
+                          columns=['pressure', 'flow_rate', 'water_cut'])
 
-input_df = pd.DataFrame({
-    'pressure': [pressure],
-    'flow_rate': [flow_rate],
-    'water_cut': [water_cut]
-})
+# Normalize input
+def scale_input(df, scaler_path='data/scaler.pkl'):
+    scaler = joblib.load(scaler_path)
+    return scaler.transform(df)
 
-# Normalize like training
-_, scaler = preprocess_data()
-input_scaled = scaler.transform(input_df)
+# Check if scaler exists
+if not os.path.exists('data/scaler.pkl'):
+    st.error("Scaler not found! Please run `preprocess_data.py` and save the scaler.")
+    st.stop()
 
-# LSTM
-lstm_input = np.reshape(input_scaled, (input_scaled.shape[0], 1, input_scaled.shape[1]))
-lstm_pred = lstm_model.predict(lstm_input)
+scaled_input = scale_input(input_data)
 
-# XGBoost
-xgb_pred = xgb_model.predict(input_scaled)
+# Reshape for LSTM
+scaled_input_lstm = np.reshape(scaled_input, (scaled_input.shape[0], 1, scaled_input.shape[1]))
 
-# Output
-st.subheader("📈 Forecasted Production Rates:")
-st.success(f"LSTM Model Prediction: **{lstm_pred[0][0]:.2f} barrels/day**")
-st.info(f"XGBoost Model Prediction: **{xgb_pred[0]:.2f} barrels/day**")
+# Predictions
+xgb_pred = xgb_model.predict(scaled_input)[0]
+lstm_pred = lstm_model.predict(scaled_input_lstm, verbose=0)[0][0]
 
-# Plot
-st.subheader("📊 Visual Comparison")
-fig, ax = plt.subplots()
-ax.bar(['LSTM', 'XGBoost'], [lstm_pred[0][0], xgb_pred[0]], color=['#f77f00', '#003049'])
-ax.set_ylabel("Predicted Production Rate")
-st.pyplot(fig)
+# Results
+st.subheader("📊 Predicted Production Rates")
+st.success(f"🔸 XGBoost Prediction: **{xgb_pred:.2f} STB/day**")
+st.info(f"🔹 LSTM Prediction: **{lstm_pred:.2f} STB/day**")
+
+# Cool graphic
+st.markdown("---")
+st.subheader("🖼️ Reservoir Graphic")
+image = Image.open("assets/reservoir_graphic.jpg")
+st.image(image, caption="Petroleum Reservoir Schematic", use_column_width=True)
+
+st.markdown("---")
+st.caption("Developed with ❤️ using Streamlit, LSTM, and XGBoost.")
