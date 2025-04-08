@@ -2,63 +2,90 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
-import os
-from tensorflow.keras.models import load_model
-from PIL import Image
+from keras.models import load_model
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Load models
+# ------------------ Set Page Config ------------------
+st.set_page_config(
+    page_title="Reservoir Production Forecasting",
+    layout="wide",
+    page_icon="🛢️",
+)
+
+# ------------------ Load Models ------------------
 @st.cache_resource
 def load_models():
     xgb_model = joblib.load('models/xgb_model.pkl')
-    lstm_model = load_model('models/lstm_model.h5')
+    lstm_model = load_model('models/lstm_model.h5', compile=False)
     return xgb_model, lstm_model
 
-# Load models
 xgb_model, lstm_model = load_models()
 
-# App title and banner
-st.set_page_config(page_title="Reservoir Forecasting App", layout="wide")
-st.title("🛢️ AI-Driven Reservoir Production Forecasting")
-st.markdown("Predict future production using historical reservoir parameters!")
+# ------------------ App Title ------------------
+st.markdown(
+    """
+    <div style="background-color:#002b36;padding:15px;border-radius:10px">
+    <h2 style="color:white;text-align:center;">🛢️ AI-Driven Reservoir Production Forecasting</h2>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
-# Sidebar inputs
-st.sidebar.header("Input Reservoir Parameters")
-pressure = st.sidebar.slider("Reservoir Pressure (psi)", 1000, 5000, 3000)
-flow_rate = st.sidebar.slider("Initial Flow Rate (STB/day)", 100, 5000, 1500)
-water_cut = st.sidebar.slider("Water Cut (%)", 0, 100, 30)
+# ------------------ Background Image ------------------
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-image: url('https://tse2.mm.bing.net/th?id=OIP.e5mlISBeDUlweUSvoiD_cwHaFd&pid=Api');
+        background-size: cover;
+        background-attachment: fixed;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-input_data = pd.DataFrame([[pressure, flow_rate, water_cut]], 
-                          columns=['pressure', 'flow_rate', 'water_cut'])
+# ------------------ Upload Data ------------------
+st.sidebar.header("Upload Test Data")
+uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
-# Normalize input
-def scale_input(df, scaler_path='data/scaler.pkl'):
-    scaler = joblib.load(scaler_path)
-    return scaler.transform(df)
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    st.subheader("📊 Uploaded Data")
+    st.dataframe(df.head())
 
-# Check if scaler exists
-if not os.path.exists('data/scaler.pkl'):
-    st.error("Scaler not found! Please run `preprocess_data.py` and save the scaler.")
-    st.stop()
+    # ------------------ Prediction ------------------
+    st.subheader("⚙️ Make Predictions")
 
-scaled_input = scale_input(input_data)
+    features = ['pressure', 'flow_rate', 'water_cut']
 
-# Reshape for LSTM
-scaled_input_lstm = np.reshape(scaled_input, (scaled_input.shape[0], 1, scaled_input.shape[1]))
+    # XGBoost Prediction
+    xgb_preds = xgb_model.predict(df[features])
+    df['XGBoost_Predicted_Rate'] = xgb_preds
 
-# Predictions
-xgb_pred = xgb_model.predict(scaled_input)[0]
-lstm_pred = lstm_model.predict(scaled_input_lstm, verbose=0)[0][0]
+    # LSTM Prediction
+    lstm_input = np.expand_dims(df[features].values, axis=0)  # reshape for LSTM
+    lstm_preds = lstm_model.predict(lstm_input)[0]
+    df['LSTM_Predicted_Rate'] = lstm_preds
 
-# Results
-st.subheader("📊 Predicted Production Rates")
-st.success(f"🔸 XGBoost Prediction: **{xgb_pred:.2f} STB/day**")
-st.info(f"🔹 LSTM Prediction: **{lstm_pred:.2f} STB/day**")
+    # ------------------ Results ------------------
+    st.subheader("📈 Forecast Results")
+    st.dataframe(df[['pressure', 'flow_rate', 'water_cut', 'XGBoost_Predicted_Rate', 'LSTM_Predicted_Rate']].head())
 
-# Cool graphic
+    # ------------------ Visualization ------------------
+    st.subheader("🔍 Visualization")
+    fig, ax = plt.subplots(figsize=(10, 5))
+    sns.lineplot(data=df, x=range(len(df)), y='XGBoost_Predicted_Rate', label='XGBoost')
+    sns.lineplot(data=df, x=range(len(df)), y='LSTM_Predicted_Rate', label='LSTM')
+    ax.set_xlabel("Time Step")
+    ax.set_ylabel("Predicted Production Rate")
+    ax.set_title("Reservoir Production Forecast")
+    st.pyplot(fig)
+
+else:
+    st.warning("⚠️ Upload a CSV file with columns: pressure, flow_rate, water_cut to proceed.")
+
+# ------------------ Footer ------------------
 st.markdown("---")
-st.subheader("🖼️ Reservoir Graphic")
-image = Image.open("assets/reservoir_graphic.jpg")
-st.image(image, caption="Petroleum Reservoir Schematic", use_column_width=True)
-
-st.markdown("---")
-st.caption("Developed with ❤️ using Streamlit, LSTM, and XGBoost.")
+st.markdown("💡 Developed by [Ujan Pradhan] | Powered by Streamlit, LSTM & XGBoost", unsafe_allow_html=True)
