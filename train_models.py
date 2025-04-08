@@ -7,6 +7,7 @@ from xgboost import XGBRegressor
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from tensorflow.keras.callbacks import EarlyStopping
+import matplotlib.pyplot as plt
 
 def load_data(file_path='/content/data/processed_data.csv'):
     df = pd.read_csv(file_path)
