@@ -6,3 +6,4 @@ xgboost
 tensorflow
 scikit-learn
 Pillow
+matplotlib
