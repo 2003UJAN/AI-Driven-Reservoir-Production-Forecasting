@@ -1,7 +1,8 @@
-streamlit==1.32.0
-numpy
+streamlit
 pandas
-scikit-learn
-tensorflow==2.14.0
+numpy
+joblib
 xgboost
-matplotlib
+tensorflow
+scikit-learn
+Pillow
