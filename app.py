@@ -38,7 +38,7 @@ st.markdown(
     """
     <style>
     .stApp {
-        background-image: url('assests/reservoir_graphic.jpg');
+        background-image:('assests/reservoir_graphic.jpg');
         background-size: cover;
         background-attachment: fixed;
     }
