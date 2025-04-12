@@ -9,18 +9,19 @@ from tensorflow.keras.layers import LSTM, Dense
 from tensorflow.keras.callbacks import EarlyStopping
 import matplotlib.pyplot as plt
 
-def load_data(file_path='/content/data/processed_data.csv'):
+def load_data(file_path='data/processed_data.csv'):
     df = pd.read_csv(file_path)
     features = ['pressure', 'flow_rate', 'water_cut']
-    target = 'flow_rate'  # or 'production_rate' based on your dataset
+    target = 'flow_rate'  # You can change this to another column if needed
     return df[features], df[target]
 
 def train_xgboost(X_train, y_train):
     model = XGBRegressor(n_estimators=100, learning_rate=0.1, max_depth=3)
-    model.fit(X_train, y_train)  # No eval_set or early_stopping
+    model.fit(X_train, y_train)
     return model
 
 def train_lstm(X_train, y_train, X_val, y_val):
+    # Reshape for LSTM input
     X_train_lstm = np.reshape(X_train.values, (X_train.shape[0], 1, X_train.shape[1]))
     X_val_lstm = np.reshape(X_val.values, (X_val.shape[0], 1, X_val.shape[1]))
 
@@ -29,18 +30,33 @@ def train_lstm(X_train, y_train, X_val, y_val):
         Dense(1)
     ])
     model.compile(optimizer='adam', loss='mse')
+
     es = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
-    model.fit(X_train_lstm, y_train, validation_data=(X_val_lstm, y_val),
-              epochs=50, batch_size=8, verbose=1, callbacks=[es])
+
+    history = model.fit(
+        X_train_lstm, y_train,
+        validation_data=(X_val_lstm, y_val),
+        epochs=50, batch_size=8, verbose=1,
+        callbacks=[es]
+    )
+
+    # Optional: Plot training history
+    # plt.plot(history.history['loss'], label='train')
+    # plt.plot(history.history['val_loss'], label='val')
+    # plt.title("LSTM Loss")
+    # plt.legend()
+    # plt.show()
+
     return model
 
-def save_models(xgb_model, lstm_model, model_dir='/content/models'):
+def save_models(xgb_model, lstm_model, model_dir='models'):
     os.makedirs(model_dir, exist_ok=True)
     joblib.dump(xgb_model, os.path.join(model_dir, 'xgb_model.pkl'))
     lstm_model.save(os.path.join(model_dir, 'lstm_model.h5'))
     print("✅ Models saved to:", model_dir)
 
 def main():
+    print("📦 Loading and splitting data...")
     X, y = load_data()
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
 
@@ -50,6 +66,7 @@ def main():
     print("🧠 Training LSTM...")
     lstm_model = train_lstm(X_train, y_train, X_val, y_val)
 
+    print("💾 Saving models...")
     save_models(xgb_model, lstm_model)
 
 if __name__ == "__main__":
