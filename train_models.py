@@ -1,57 +1,45 @@
-import os
 import pandas as pd
 import numpy as np
 import joblib
 from sklearn.model_selection import train_test_split
-from xgboost import XGBRegressor
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
-from tensorflow.keras.callbacks import EarlyStopping
-from utils.preprocessing import preprocess_data
-from utils.preprocessing import preprocess_data
+from sklearn.ensemble import GradientBoostingRegressor
+from keras.models import Sequential
+from keras.layers import LSTM, Dense
+from keras.callbacks import EarlyStopping
+import os
 
-def load_data():
-    df, _ = preprocess_data()
-    features = ['pressure', 'flow_rate', 'water_cut']
-    target = 'flow_rate'  # or 'production_rate' if applicable
-    return df[features], df[target]
+# Load and prepare data
+df = pd.read_csv('data/processed_data.csv')
+features = ['pressure', 'flow_rate', 'water_cut']
+target = 'flow_rate'
 
-def train_xgboost(X_train, y_train):
-    model = XGBRegressor(n_estimators=100, learning_rate=0.1, max_depth=3)
-    model.fit(X_train, y_train)
-    return model
+# Train-test split
+X = df[features]
+y = df[target]
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-def train_lstm(X_train, y_train, X_val, y_val):
-    X_train_lstm = np.reshape(X_train.values, (X_train.shape[0], 1, X_train.shape[1]))
-    X_val_lstm = np.reshape(X_val.values, (X_val.shape[0], 1, X_val.shape[1]))
+# XGBoost (or any regressor like GradientBoosting)
+xgb_model = GradientBoostingRegressor()
+xgb_model.fit(X_train, y_train)
 
-    model = Sequential([
-        LSTM(50, activation='relu', input_shape=(1, X_train.shape[1])),
-        Dense(1)
-    ])
-    model.compile(optimizer='adam', loss='mse')
-    es = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
-    model.fit(X_train_lstm, y_train, validation_data=(X_val_lstm, y_val),
-              epochs=50, batch_size=8, verbose=1, callbacks=[es])
-    return model
+# Save XGBoost model
+os.makedirs('models', exist_ok=True)
+joblib.dump(xgb_model, 'models/xgb_model.pkl')
+print("✅ XGBoost model saved to models/xgb_model.pkl")
 
-def save_models(xgb_model, lstm_model):
-    os.makedirs('models', exist_ok=True)
-    joblib.dump(xgb_model, 'models/xgb_model.pkl')
-    lstm_model.save('models/lstm_model.h5')
-    print("✅ Models saved to models/")
+# LSTM requires reshaping
+X_lstm = np.expand_dims(X.values, axis=0)   # (1, timesteps, features)
+y_lstm = np.expand_dims(y.values, axis=0)   # (1, timesteps)
 
-def main():
-    X, y = load_data()
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+# Build simple LSTM model
+lstm_model = Sequential()
+lstm_model.add(LSTM(64, input_shape=(X_lstm.shape[1], X_lstm.shape[2]), return_sequences=True))
+lstm_model.add(Dense(1))
+lstm_model.compile(loss='mse', optimizer='adam')
 
-    print("🧠 Training XGBoost...")
-    xgb_model = train_xgboost(X_train, y_train)
+# Train LSTM
+lstm_model.fit(X_lstm, y_lstm, epochs=100, verbose=0, callbacks=[EarlyStopping(patience=10)])
 
-    print("🧠 Training LSTM...")
-    lstm_model = train_lstm(X_train, y_train, X_val, y_val)
-
-    save_models(xgb_model, lstm_model)
-
-if __name__ == "__main__":
-    main()
+# Save LSTM model
+lstm_model.save('models/lstm_model.h5')
+print("✅ LSTM model saved to models/lstm_model.h5")
