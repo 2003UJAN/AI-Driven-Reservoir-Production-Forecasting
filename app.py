@@ -14,31 +14,15 @@ st.set_page_config(
     page_icon="🛢️",
 )
 
-# ------------------ Load Models & Scaler ------------------
+# ------------------ Load Models and Scaler ------------------
 @st.cache_resource
-def load_models_and_scaler():
+def load_models():
     xgb_model = joblib.load('models/xgb_model.pkl')
     lstm_model = load_model('models/lstm_model.h5', compile=False)
-    scaler_path = 'data/processed_data_scaler.pkl'
-    scaler = joblib.load(scaler_path) if os.path.exists(scaler_path) else None
+    scaler = joblib.load('data/processed_data_scaler.pkl')
     return xgb_model, lstm_model, scaler
 
-xgb_model, lstm_model, scaler = load_models_and_scaler()
-
-# ------------------ Theme Toggle ------------------
-theme = st.sidebar.radio("Select Theme", ["Light", "Dark"])
-if theme == "Dark":
-    st.markdown("""
-        <style>
-        body {
-            background-color: #1e1e1e;
-            color: white;
-        }
-        .stApp {
-            background-color: #1e1e1e;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+xgb_model, lstm_model, scaler = load_models()
 
 # ------------------ App Title ------------------
 st.markdown(
@@ -50,79 +34,44 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ------------------ Sidebar: Upload ------------------
+# ------------------ Upload Data ------------------
 st.sidebar.header("Upload Test Data")
 uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
-st.sidebar.markdown("""
-**Instructions**  
-1. Upload a CSV with: `pressure`, `flow_rate`, `water_cut`.  
-2. Models will predict production rate.  
-3. See outputs in the tabs.
-""")
-
-# ------------------ Main Logic ------------------
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
-
-    # Validate columns
-    required_cols = {'pressure', 'flow_rate', 'water_cut'}
-    if not required_cols.issubset(df.columns):
-        st.error(f"Uploaded file must contain columns: {required_cols}")
-        st.stop()
+    st.subheader("📊 Uploaded Data")
+    st.dataframe(df.head())
 
     features = ['pressure', 'flow_rate', 'water_cut']
-    if scaler:
-        df[features] = scaler.transform(df[features])
-    else:
-        st.warning("⚠️ Scaler not found — using raw feature values. Ensure preprocessing consistency.")
+    df_scaled = df.copy()
+    df_scaled[features] = scaler.transform(df[features])
 
-    # ------------------ Predictions ------------------
-    with st.spinner("🔮 Making predictions..."):
-        xgb_preds = xgb_model.predict(df[features])
-        df['XGBoost_Predicted_Rate'] = xgb_preds
+    st.subheader("⚙️ Predictions")
 
-        lstm_input = np.expand_dims(df[features].values, axis=0)
-        lstm_preds = lstm_model.predict(lstm_input)[0]
-        pred_len = lstm_preds.shape[0]
-        df_trimmed = df.iloc[:pred_len].copy()
-        df_trimmed['LSTM_Predicted_Rate'] = lstm_preds.flatten()
+    # XGBoost Prediction
+    xgb_preds = xgb_model.predict(df_scaled[features])
+    df['XGBoost_Predicted_Rate'] = xgb_preds
 
-    # ------------------ Tabs ------------------
-    tab1, tab2, tab3 = st.tabs(["📊 Input Data", "📈 Forecast Table", "📉 Visualization"])
+    # LSTM Prediction
+    lstm_input = np.reshape(df_scaled[features].values, (df_scaled.shape[0], 1, len(features)))
+    lstm_preds = lstm_model.predict(lstm_input)
+    df['LSTM_Predicted_Rate'] = lstm_preds.flatten()
 
-    with tab1:
-        st.subheader("📊 Uploaded Input")
-        st.dataframe(df[features].head())
+    st.dataframe(df[['pressure', 'flow_rate', 'water_cut', 'XGBoost_Predicted_Rate', 'LSTM_Predicted_Rate']].head())
 
-    with tab2:
-        st.subheader("📈 Forecast Results")
-        st.dataframe(df_trimmed[['pressure', 'flow_rate', 'water_cut', 'XGBoost_Predicted_Rate', 'LSTM_Predicted_Rate']].head(20))
-
-        # Download Predictions
-        csv_download = df_trimmed.to_csv(index=False)
-        st.download_button(
-            label="📥 Download Forecast CSV",
-            data=csv_download,
-            file_name="forecast_results.csv",
-            mime="text/csv"
-        )
-
-    with tab3:
-        st.subheader("🔍 Visualization")
-        fig, ax = plt.subplots(figsize=(10, 5))
-        sns.lineplot(x=range(len(df_trimmed)), y=df_trimmed['XGBoost_Predicted_Rate'], label='XGBoost')
-        sns.lineplot(x=range(len(df_trimmed)), y=df_trimmed['LSTM_Predicted_Rate'], label='LSTM')
-        ax.set_xlabel("Time Step")
-        ax.set_ylabel("Predicted Production Rate")
-        ax.set_title("Reservoir Production Forecast")
-        ax.grid(True)
-        ax.legend()
-        sns.despine()
-        st.pyplot(fig)
+    # ------------------ Visualization ------------------
+    st.subheader("📈 Forecast Comparison")
+    fig, ax = plt.subplots(figsize=(10, 5))
+    sns.lineplot(x=range(len(df)), y=df['XGBoost_Predicted_Rate'], label='XGBoost')
+    sns.lineplot(x=range(len(df)), y=df['LSTM_Predicted_Rate'], label='LSTM')
+    ax.set_xlabel("Time Step")
+    ax.set_ylabel("Predicted Rate")
+    ax.set_title("Reservoir Production Forecast")
+    st.pyplot(fig)
 
 else:
-    st.info("📂 Please upload a CSV file with columns: `pressure`, `flow_rate`, `water_cut` to get started.")
+    st.warning("⚠️ Please upload a CSV with columns: pressure, flow_rate, water_cut.")
 
 # ------------------ Footer ------------------
 st.markdown("---")
