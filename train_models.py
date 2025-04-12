@@ -7,11 +7,12 @@ from xgboost import XGBRegressor
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from tensorflow.keras.callbacks import EarlyStopping
+from utils.preprocessing import preprocess_data
 
-def load_data(file_path='data/processed_data.csv'):
-    df = pd.read_csv(file_path)
+def load_data():
+    df, _ = preprocess_data()
     features = ['pressure', 'flow_rate', 'water_cut']
-    target = 'flow_rate'  # or another target if desired
+    target = 'flow_rate'  # or 'production_rate' if applicable
     return df[features], df[target]
 
 def train_xgboost(X_train, y_train):
@@ -29,23 +30,17 @@ def train_lstm(X_train, y_train, X_val, y_val):
     ])
     model.compile(optimizer='adam', loss='mse')
     es = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
-
-    model.fit(
-        X_train_lstm, y_train,
-        validation_data=(X_val_lstm, y_val),
-        epochs=50, batch_size=8, verbose=1,
-        callbacks=[es]
-    )
+    model.fit(X_train_lstm, y_train, validation_data=(X_val_lstm, y_val),
+              epochs=50, batch_size=8, verbose=1, callbacks=[es])
     return model
 
-def save_models(xgb_model, lstm_model, model_dir='models'):
-    os.makedirs(model_dir, exist_ok=True)
-    joblib.dump(xgb_model, os.path.join(model_dir, 'xgb_model.pkl'))
-    lstm_model.save(os.path.join(model_dir, 'lstm_model.h5'))
-    print("✅ Models saved to:", model_dir)
+def save_models(xgb_model, lstm_model):
+    os.makedirs('models', exist_ok=True)
+    joblib.dump(xgb_model, 'models/xgb_model.pkl')
+    lstm_model.save('models/lstm_model.h5')
+    print("✅ Models saved to models/")
 
 def main():
-    print("📦 Loading data...")
     X, y = load_data()
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
 
