@@ -1,38 +1,55 @@
-import pandas as pd
 import os
-from sklearn.preprocessing import MinMaxScaler
+import pandas as pd
+import numpy as np
 import joblib
+from sklearn.model_selection import train_test_split
+from xgboost import XGBRegressor
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
+from tensorflow.keras.callbacks import EarlyStopping
 
-def preprocess_data(file_path='data/raw_data.csv', output_path='data/processed_data.csv', feature_cols=None):
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
+def load_data(file_path='data/processed_data.csv'):
     df = pd.read_csv(file_path)
+    features = ['pressure', 'flow_rate', 'water_cut']
+    target = 'flow_rate'  # can be changed based on use-case
+    return df[features], df[target]
 
-    if feature_cols is None:
-        feature_cols = ['pressure', 'flow_rate', 'water_cut']
+def train_xgboost(X_train, y_train):
+    model = XGBRegressor(n_estimators=100, learning_rate=0.1, max_depth=3)
+    model.fit(X_train, y_train)
+    return model
 
-    scaler = MinMaxScaler()
-    df[feature_cols] = scaler.fit_transform(df[feature_cols])
+def train_lstm(X_train, y_train, X_val, y_val):
+    X_train_lstm = np.reshape(X_train.values, (X_train.shape[0], 1, X_train.shape[1]))
+    X_val_lstm = np.reshape(X_val.values, (X_val.shape[0], 1, X_val.shape[1]))
 
-    df.to_csv(output_path, index=False)
-    joblib.dump(scaler, 'data/processed_data_scaler.pkl')
+    model = Sequential([
+        LSTM(50, activation='relu', input_shape=(1, X_train.shape[1])),
+        Dense(1)
+    ])
+    model.compile(optimizer='adam', loss='mse')
+    es = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+    model.fit(X_train_lstm, y_train, validation_data=(X_val_lstm, y_val),
+              epochs=50, batch_size=8, verbose=1, callbacks=[es])
+    return model
 
-    print(f"✅ Data preprocessed and saved at {output_path}")
-    return df, scaler
+def save_models(xgb_model, lstm_model, model_dir='models'):
+    os.makedirs(model_dir, exist_ok=True)
+    joblib.dump(xgb_model, os.path.join(model_dir, 'xgb_model.pkl'))
+    lstm_model.save(os.path.join(model_dir, 'lstm_model.h5'))
+    print("✅ Models saved to:", model_dir)
+
+def main():
+    X, y = load_data()
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    print("🧠 Training XGBoost...")
+    xgb_model = train_xgboost(X_train, y_train)
+
+    print("🧠 Training LSTM...")
+    lstm_model = train_lstm(X_train, y_train, X_val, y_val)
+
+    save_models(xgb_model, lstm_model)
 
 if __name__ == "__main__":
-    import numpy as np
-
-    sample_data = pd.DataFrame({
-        'pressure': np.random.uniform(2000, 5000, 100),
-        'flow_rate': np.random.uniform(50, 500, 100),
-        'water_cut': np.random.uniform(0.0, 1.0, 100)
-    })
-
-    raw_data_path = 'data/raw_data.csv'
-    processed_data_path = 'data/processed_data.csv'
-
-    os.makedirs(os.path.dirname(raw_data_path), exist_ok=True)
-    sample_data.to_csv(raw_data_path, index=False)
-
-    preprocess_data(file_path=raw_data_path, output_path=processed_data_path)
+    main()
