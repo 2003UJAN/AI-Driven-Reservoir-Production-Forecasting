@@ -66,9 +66,10 @@ if uploaded_file is not None:
     df['XGBoost_Predicted_Rate'] = xgb_preds
 
     # LSTM Prediction
-    lstm_input = np.expand_dims(df[features].values, axis=0)  # reshape for LSTM
-    lstm_preds = lstm_model.predict(lstm_input)[0]
-    df['LSTM_Predicted_Rate'] = lstm_preds
+    lstm_input = np.expand_dims(df[features].values, axis=0)  # shape: (1, timesteps, features)
+    lstm_preds = lstm_model.predict(lstm_input)[0]  # shape: (timesteps, 1)
+    df['LSTM_Predicted_Rate'] = lstm_preds.flatten()  # match length with df
+
 
     # ------------------ Results ------------------
     st.subheader("📈 Forecast Results")
