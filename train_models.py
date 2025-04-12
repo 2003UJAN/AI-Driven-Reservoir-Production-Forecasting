@@ -8,6 +8,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from tensorflow.keras.callbacks import EarlyStopping
 from utils.preprocessing import preprocess_data
+from utils.preprocessing import preprocess_data
 
 def load_data():
     df, _ = preprocess_data()
