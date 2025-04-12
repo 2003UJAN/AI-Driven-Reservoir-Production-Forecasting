@@ -1,7 +1,3 @@
-import os
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'utils')))
-from preprocessing import preprocess_data
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -9,83 +5,73 @@ import joblib
 from keras.models import load_model
 import matplotlib.pyplot as plt
 import seaborn as sns
-from utils.preprocessing import preprocess_data
-from utils.preprocessing import preprocess_data
 
-# ------------------ Set Page Config ------------------
+# Set Streamlit config
 st.set_page_config(
     page_title="Reservoir Production Forecasting",
     layout="wide",
     page_icon="🛢️",
 )
 
-# ------------------ Load Models ------------------
+# Load models
 @st.cache_resource
 def load_models():
     xgb_model = joblib.load('models/xgb_model.pkl')
     lstm_model = load_model('models/lstm_model.h5', compile=False)
-    scaler = joblib.load('models/processed_data_scaler.pkl')
-    return xgb_model, lstm_model, scaler
+    return xgb_model, lstm_model
 
-xgb_model, lstm_model, scaler = load_models()
+xgb_model, lstm_model = load_models()
 
-# ------------------ App Title ------------------
-st.markdown(
-    """
+# Title
+st.markdown("""
     <div style="background-color:#002b36;padding:15px;border-radius:10px">
     <h2 style="color:white;text-align:center;">🛢️ AI-Driven Reservoir Production Forecasting</h2>
     </div>
-    """,
-    unsafe_allow_html=True
-)
+""", unsafe_allow_html=True)
 
-# ------------------ Upload Data ------------------
+# File upload
 st.sidebar.header("Upload Test Data")
 uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
-if uploaded_file is not None:
+if uploaded_file:
     df = pd.read_csv(uploaded_file)
     st.subheader("📊 Uploaded Data")
     st.dataframe(df.head())
 
-    st.subheader("⚙️ Make Predictions")
+    features = ['pressure', 'flow_rate', 'water_cut']
 
-    feature_cols = ['pressure', 'flow_rate', 'water_cut']
-    
-    # Scale features using loaded scaler
-    scaled_features = scaler.transform(df[feature_cols])
-    df_scaled = pd.DataFrame(scaled_features, columns=feature_cols)
-
-    # XGBoost Prediction
-    xgb_preds = xgb_model.predict(df_scaled)
+    # XGBoost Predictions
+    xgb_preds = xgb_model.predict(df[features])
     df['XGBoost_Predicted_Rate'] = xgb_preds
 
-    # LSTM Prediction
-    lstm_input = np.expand_dims(df_scaled.values, axis=0)  # shape: (1, timesteps, features)
-    lstm_preds = lstm_model.predict(lstm_input)[0]
-
-    # Align lengths
-    pred_len = lstm_preds.shape[0]
-    df_trimmed = df.iloc[:pred_len].copy()
-    df_trimmed['LSTM_Predicted_Rate'] = lstm_preds.flatten()
-
-    # ------------------ Results ------------------
+    # LSTM Predictions
+    lstm_input = np.expand_dims(df[features].values, axis=0)  # (1, timesteps, features)
+    lstm_preds = lstm_model.predict(lstm_input)[0]  # (timesteps, 1)
+    
+    # Match lengths
+    if len(lstm_preds.flatten()) == len(df):
+        df['LSTM_Predicted_Rate'] = lstm_preds.flatten()
+    else:
+        st.error("⚠️ LSTM prediction length mismatch. Please check model input compatibility.")
+    
+    # Results
     st.subheader("📈 Forecast Results")
-    st.dataframe(df_trimmed[['pressure', 'flow_rate', 'water_cut', 'XGBoost_Predicted_Rate', 'LSTM_Predicted_Rate']].head())
+    st.dataframe(df[['pressure', 'flow_rate', 'water_cut', 'XGBoost_Predicted_Rate', 'LSTM_Predicted_Rate']].head())
 
-    # ------------------ Visualization ------------------
+    # Plot
     st.subheader("🔍 Visualization")
     fig, ax = plt.subplots(figsize=(10, 5))
-    sns.lineplot(data=df_trimmed, y='XGBoost_Predicted_Rate', x=df_trimmed.index, label='XGBoost')
-    sns.lineplot(data=df_trimmed, y='LSTM_Predicted_Rate', x=df_trimmed.index, label='LSTM')
+    sns.lineplot(x=range(len(df)), y=df['XGBoost_Predicted_Rate'], label='XGBoost')
+    if 'LSTM_Predicted_Rate' in df:
+        sns.lineplot(x=range(len(df)), y=df['LSTM_Predicted_Rate'], label='LSTM')
     ax.set_xlabel("Time Step")
     ax.set_ylabel("Predicted Production Rate")
     ax.set_title("Reservoir Production Forecast")
     st.pyplot(fig)
 
 else:
-    st.warning("⚠️ Upload a CSV file with columns: pressure, flow_rate, water_cut to proceed.")
+    st.warning("⚠️ Upload a CSV file with columns: pressure, flow_rate, water_cut.")
 
-# ------------------ Footer ------------------
+# Footer
 st.markdown("---")
 st.markdown("💡 Developed by [Ujan Pradhan] | Powered by Streamlit, LSTM & XGBoost", unsafe_allow_html=True)
