@@ -1,4 +1,5 @@
 import os
+import sys
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -6,6 +7,10 @@ import joblib
 from keras.models import load_model
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+# Add current directory to path for utils
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
 from utils.preprocessing import preprocess_data
 
 # ------------------ Page Config ------------------
@@ -18,20 +23,29 @@ st.set_page_config(
 # ------------------ Load Models ------------------
 @st.cache_resource
 def load_models():
-    xgb_model = joblib.load('models/xgb_model.pkl')
-    lstm_model = load_model('models/lstm_model.h5', compile=False)
+    try:
+        xgb_model = joblib.load('models/xgb_model.pkl')
+    except:
+        st.error("❌ XGBoost model not found.")
+        xgb_model = None
 
-    scaler_path = 'data/processed_data_scaler.pkl'
-    if os.path.exists(scaler_path):
-        scaler = joblib.load(scaler_path)
-    else:
-        _, scaler = preprocess_data('data/raw_data.csv', 'data/processed_data.csv')
+    try:
+        lstm_model = load_model('models/lstm_model.h5', compile=False)
+    except:
+        st.error("❌ LSTM model not found.")
+        lstm_model = None
+
+    try:
+        scaler = joblib.load('data/processed_data_scaler.pkl')
+    except:
+        st.warning("⚠️ Scaler not found. Proceeding without scaling.")
+        scaler = None
 
     return xgb_model, lstm_model, scaler
 
 xgb_model, lstm_model, scaler = load_models()
 
-# ------------------ Title ------------------
+# ------------------ App Title ------------------
 st.markdown(
     """
     <div style="background-color:#002b36;padding:15px;border-radius:10px">
@@ -52,31 +66,42 @@ if uploaded_file is not None:
 
     st.subheader("⚙️ Make Predictions")
     features = ['pressure', 'flow_rate', 'water_cut']
-    df_scaled = df.copy()
-    df_scaled[features] = scaler.transform(df[features])
+
+    # Optional: Scale data
+    if scaler:
+        df[features] = scaler.transform(df[features])
 
     # XGBoost Prediction
-    xgb_preds = xgb_model.predict(df_scaled[features])
-    df['XGBoost_Predicted_Rate'] = xgb_preds
+    if xgb_model:
+        xgb_preds = xgb_model.predict(df[features])
+        df['XGBoost_Predicted_Rate'] = xgb_preds
 
     # LSTM Prediction
-    lstm_input = np.reshape(df_scaled[features].values, (df_scaled.shape[0], 1, len(features)))
-    lstm_preds = lstm_model.predict(lstm_input).flatten()
-    df['LSTM_Predicted_Rate'] = lstm_preds
+    if lstm_model:
+        lstm_input = np.reshape(df[features].values, (df.shape[0], 1, len(features)))
+        lstm_preds = lstm_model.predict(lstm_input)
+        df['LSTM_Predicted_Rate'] = lstm_preds.flatten()
 
     # ------------------ Results ------------------
     st.subheader("📈 Forecast Results")
-    st.dataframe(df[['pressure', 'flow_rate', 'water_cut', 'XGBoost_Predicted_Rate', 'LSTM_Predicted_Rate']].head())
+    pred_cols = ['XGBoost_Predicted_Rate', 'LSTM_Predicted_Rate']
+    shown_cols = features + [col for col in pred_cols if col in df.columns]
+    st.dataframe(df[shown_cols].head())
 
     # ------------------ Visualization ------------------
-    st.subheader("🔍 Visualization")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.lineplot(x=range(len(df)), y=df['XGBoost_Predicted_Rate'], label='XGBoost')
-    sns.lineplot(x=range(len(df)), y=df['LSTM_Predicted_Rate'], label='LSTM')
-    ax.set_xlabel("Time Step")
-    ax.set_ylabel("Predicted Production Rate")
-    ax.set_title("Reservoir Production Forecast")
-    st.pyplot(fig)
+    if 'XGBoost_Predicted_Rate' in df.columns or 'LSTM_Predicted_Rate' in df.columns:
+        st.subheader("🔍 Visualization")
+        fig, ax = plt.subplots(figsize=(10, 5))
+        if 'XGBoost_Predicted_Rate' in df.columns:
+            sns.lineplot(x=range(len(df)), y=df['XGBoost_Predicted_Rate'], label='XGBoost')
+        if 'LSTM_Predicted_Rate' in df.columns:
+            sns.lineplot(x=range(len(df)), y=df['LSTM_Predicted_Rate'], label='LSTM')
+        ax.set_xlabel("Time Step")
+        ax.set_ylabel("Predicted Production Rate")
+        ax.set_title("Reservoir Production Forecast")
+        st.pyplot(fig)
+    else:
+        st.warning("⚠️ No predictions made yet.")
 
 else:
     st.warning("⚠️ Upload a CSV file with columns: pressure, flow_rate, water_cut to proceed.")
