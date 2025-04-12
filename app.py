@@ -5,6 +5,7 @@ import joblib
 from keras.models import load_model
 import matplotlib.pyplot as plt
 import seaborn as sns
+from preprocessing import preprocess_data
 
 # Set Streamlit config
 st.set_page_config(
