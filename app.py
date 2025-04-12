@@ -1,3 +1,7 @@
+import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'utils')))
+from preprocessing import preprocess_data
 import streamlit as st
 import pandas as pd
 import numpy as np
