@@ -5,7 +5,6 @@ import joblib
 from keras.models import load_model
 import matplotlib.pyplot as plt
 import seaborn as sns
-import matplotlib.pyplot as plt
 
 # ------------------ Set Page Config ------------------
 st.set_page_config(
@@ -38,7 +37,7 @@ st.markdown(
     """
     <style>
     .stApp {
-        background-image:('assests/reservoir_graphic.jpg');
+        background-image: url('assets/reservoir_graphic.jpg');
         background-size: cover;
         background-attachment: fixed;
     }
@@ -56,9 +55,7 @@ if uploaded_file is not None:
     st.subheader("📊 Uploaded Data")
     st.dataframe(df.head())
 
-    # ------------------ Prediction ------------------
     st.subheader("⚙️ Make Predictions")
-
     features = ['pressure', 'flow_rate', 'water_cut']
 
     # XGBoost Prediction
@@ -67,19 +64,22 @@ if uploaded_file is not None:
 
     # LSTM Prediction
     lstm_input = np.expand_dims(df[features].values, axis=0)  # shape: (1, timesteps, features)
-    lstm_preds = lstm_model.predict(lstm_input)[0]  # shape: (timesteps, 1)
-    df['LSTM_Predicted_Rate'] = lstm_preds.flatten()  # match length with df
+    lstm_preds = lstm_model.predict(lstm_input)[0]  # shape: (timesteps, 1) or (timesteps,)
 
+    # Align lengths
+    pred_len = lstm_preds.shape[0]
+    df_trimmed = df.iloc[:pred_len].copy()
+    df_trimmed['LSTM_Predicted_Rate'] = lstm_preds.flatten()
 
     # ------------------ Results ------------------
     st.subheader("📈 Forecast Results")
-    st.dataframe(df[['pressure', 'flow_rate', 'water_cut', 'XGBoost_Predicted_Rate', 'LSTM_Predicted_Rate']].head())
+    st.dataframe(df_trimmed[['pressure', 'flow_rate', 'water_cut', 'XGBoost_Predicted_Rate', 'LSTM_Predicted_Rate']].head())
 
     # ------------------ Visualization ------------------
     st.subheader("🔍 Visualization")
     fig, ax = plt.subplots(figsize=(10, 5))
-    sns.lineplot(data=df, x=range(len(df)), y='XGBoost_Predicted_Rate', label='XGBoost')
-    sns.lineplot(data=df, x=range(len(df)), y='LSTM_Predicted_Rate', label='LSTM')
+    sns.lineplot(x=range(len(df_trimmed)), y=df_trimmed['XGBoost_Predicted_Rate'], label='XGBoost')
+    sns.lineplot(x=range(len(df_trimmed)), y=df_trimmed['LSTM_Predicted_Rate'], label='LSTM')
     ax.set_xlabel("Time Step")
     ax.set_ylabel("Predicted Production Rate")
     ax.set_title("Reservoir Production Forecast")
